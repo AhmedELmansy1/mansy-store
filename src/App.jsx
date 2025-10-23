@@ -1,202 +1,214 @@
 import React, { useState, useEffect } from "react";
-import "./App.css";
-import { db, storage } from "./firebase";
+import { db } from "./firebase";
 import {
   collection,
   addDoc,
   getDocs,
-  query,
-  orderBy,
   serverTimestamp,
+  doc,
+  updateDoc,
+  deleteDoc
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import "./App.css";
 
-export default function App() {
+function App() {
   const [products, setProducts] = useState([]);
-  const [category, setCategory] = useState("all");
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [filter, setFilter] = useState("الكل");
   const [newProduct, setNewProduct] = useState({
     name: "",
     price: "",
     category: "شبابي",
-    image: null,
+    imageURL: "",
   });
+  const [adminVisible, setAdminVisible] = useState(false);
+  const [password, setPassword] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  const categories = ["all", "شبابي", "رياضي", "بناطيل"];
-
-  // ✅ تحميل المنتجات من Firebase
   useEffect(() => {
     const fetchProducts = async () => {
-      const q = query(collection(db, "products"), orderBy("timestamp", "desc"));
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const querySnapshot = await getDocs(collection(db, "products"));
+      const data = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setProducts(data);
     };
     fetchProducts();
   }, []);
 
-  // ✅ رفع منتج جديد
+  const handleLogin = () => {
+    if (password === "admin123") {
+      setIsAdmin(true);
+      setAdminVisible(false);
+    } else {
+      alert("كلمة المرور غلط 😅");
+    }
+  };
+
   const handleUpload = async () => {
-    if (!newProduct.name || !newProduct.price || !newProduct.image) {
+    if (!newProduct.name || !newProduct.price || !newProduct.imageURL) {
       alert("من فضلك املأ كل البيانات");
       return;
     }
-
     try {
-      // 1️⃣ رفع الصورة إلى Firebase Storage
-      const imageRef = ref(storage, `products/${Date.now()}_${newProduct.image.name}`);
-      await uploadBytes(imageRef, newProduct.image);
-      const imageURL = await getDownloadURL(imageRef);
-
-      // 2️⃣ حفظ بيانات المنتج في Firestore
       await addDoc(collection(db, "products"), {
         name: newProduct.name,
         price: newProduct.price,
         category: newProduct.category,
-        imageURL,
+        imageURL: newProduct.imageURL,
         timestamp: serverTimestamp(),
       });
-
       alert("✅ تم رفع المنتج بنجاح!");
-      setNewProduct({ name: "", price: "", category: "شبابي", image: null });
+      setNewProduct({ name: "", price: "", category: "شبابي", imageURL: "" });
       window.location.reload();
     } catch (error) {
       console.error("خطأ أثناء الرفع:", error);
+      alert("❌ حدث خطأ أثناء الرفع. افتح Console وشوف التفاصيل");
     }
   };
 
-  // ✅ تسجيل الدخول للوحة التحكم
-  const handleLogin = () => {
-    if (password === "admin123") {
-      setIsAdmin(true);
-      setError("");
-    } else {
-      setError("كلمة المرور غير صحيحة");
+  const handleDelete = async (id) => {
+    if (window.confirm("متأكد إنك عايز تحذف المنتج؟")) {
+      await deleteDoc(doc(db, "products", id));
+      setProducts(products.filter((p) => p.id !== id));
     }
   };
 
-  // ✅ تصفية المنتجات حسب النوع
+  const handleEdit = async (product) => {
+    const newName = prompt("اسم المنتج الجديد:", product.name);
+    const newPrice = prompt("السعر الجديد:", product.price);
+    const newImage = prompt("رابط الصورة الجديد:", product.imageURL);
+    if (newName && newPrice && newImage) {
+      const productRef = doc(db, "products", product.id);
+      await updateDoc(productRef, { name: newName, price: newPrice, imageURL: newImage });
+      setProducts(
+        products.map((p) =>
+          p.id === product.id ? { ...p, name: newName, price: newPrice, imageURL: newImage } : p
+        )
+      );
+    }
+  };
+
   const filteredProducts =
-    category === "all"
-      ? products
-      : products.filter((p) => p.category === category);
+    filter === "الكل" ? products : products.filter((p) => p.category === filter);
 
   return (
     <div className="App">
-      {/* ===== Navbar ===== */}
       <nav className="navbar">
-        <div className="nav-inner container">
+        <div className="nav-inner">
           <div className="brand">
             Mansy <span>Store</span>
           </div>
+          {!isAdmin && (
+            <button className="btn gold" onClick={() => setAdminVisible(!adminVisible)}>
+              ⚙️
+            </button>
+          )}
         </div>
       </nav>
 
-      {/* ===== Hero ===== */}
-      <section className="hero fade-in">
-        <h1>Mansy Store</h1>
-        <p>اكتشف أحدث الموديلات الفاخرة</p>
-      </section>
-
-      {/* ===== Category Filter ===== */}
-      <div className="category-filter container fade-in">
-        {categories.map((c) => (
-          <div
-            key={c}
-            className={`chip ${category === c ? "active" : ""}`}
-            onClick={() => setCategory(c)}
-          >
-            {c === "all" ? "الكل" : c}
-          </div>
-        ))}
-      </div>
-
-      {/* ===== Products Grid ===== */}
-      <div className="grid container fade-in">
-        {filteredProducts.map((p) => (
-          <div className="card" key={p.id}>
-            <div className="card-media">
-              <img src={p.imageURL} alt={p.name} />
-            </div>
-            <div className="card-body">
-              <h3>{p.name}</h3>
-              <div className="meta">
-                <span>{p.price} ج.م</span>
-                <span>{p.category}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ===== Admin Login ===== */}
-      {!isAdmin && (
-        <div className="admin-panel fade-in">
-          <h3>تسجيل دخول المدير</h3>
+      {adminVisible && !isAdmin && (
+        <div className="admin-panel">
+          <h3>لوحة الدخول</h3>
           <input
             type="password"
-            placeholder="كلمة السر"
+            placeholder="ادخل كلمة المرور"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          {error && <div style={{ color: "red", marginBottom: "8px" }}>{error}</div>}
-          <button className="btn full gold" onClick={handleLogin}>
+          <button className="btn gold full" onClick={handleLogin}>
             دخول
           </button>
         </div>
       )}
 
-      {/* ===== Admin Panel ===== */}
       {isAdmin && (
-        <div className="admin-panel fade-in">
-          <h3>إضافة منتج جديد</h3>
+        <div className="admin-panel">
+          <h3>لوحة التحكم</h3>
           <input
             type="text"
             placeholder="اسم المنتج"
             value={newProduct.name}
-            onChange={(e) =>
-              setNewProduct({ ...newProduct, name: e.target.value })
-            }
+            onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
           />
           <input
             type="number"
             placeholder="السعر"
             value={newProduct.price}
-            onChange={(e) =>
-              setNewProduct({ ...newProduct, price: e.target.value })
-            }
+            onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
           />
           <select
             value={newProduct.category}
-            onChange={(e) =>
-              setNewProduct({ ...newProduct, category: e.target.value })
-            }
+            onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
           >
             <option value="شبابي">شبابي</option>
             <option value="رياضي">رياضي</option>
             <option value="بناطيل">بناطيل</option>
           </select>
           <input
-            type="file"
-            onChange={(e) =>
-              setNewProduct({ ...newProduct, image: e.target.files[0] })
-            }
+            type="text"
+            placeholder="رابط الصورة (Direct URL)"
+            value={newProduct.imageURL}
+            onChange={(e) => setNewProduct({ ...newProduct, imageURL: e.target.value })}
           />
-          <button className="btn full gold" onClick={handleUpload}>
-            رفع المنتج ✅
+          <button className="btn gold full" onClick={handleUpload}>
+            رفع المنتج
           </button>
         </div>
       )}
 
-      {/* ===== Footer ===== */}
-      <footer className="footer fade-in">
-        <p>© 2025 ENG: Ahmed Elmansy. All Rights Reserved.</p>
+      <div className="container">
+        <div className="category-filter">
+          {["الكل", "شبابي", "رياضي", "بناطيل"].map((cat) => (
+            <button
+              key={cat}
+              className={`chip ${filter === cat ? "active" : ""}`}
+              onClick={() => setFilter(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid">
+          {filteredProducts.map((p) => (
+            <div key={p.id} className="card">
+              <div className="card-media">
+                <img src={p.imageURL} alt={p.name} />
+              </div>
+              <div className="card-body">
+                <h3>{p.name}</h3>
+                <div className="meta">{p.price} EGP</div>
+                {isAdmin && (
+                  <div className="admin-buttons">
+                    <button className="btn gold" onClick={() => handleEdit(p)}>
+                      ✏️ تعديل
+                    </button>
+                    <button className="btn gold" onClick={() => handleDelete(p.id)}>
+                      🗑️ حذف
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <footer className="footer">
+        <div className="footer-container">
+          <p>© 2025 ENG: Ahmed Elmansy. All Rights Reserved.</p>
+          <div className="contact">
+            <a href="tel:+201030537395">📞 +20 1030537395</a>
+            <a
+              href="https://wa.me/201030537395"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              💬 واتساب
+            </a>
+          </div>
+        </div>
       </footer>
     </div>
   );
 }
+
+export default App;
