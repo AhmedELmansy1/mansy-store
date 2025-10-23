@@ -1,207 +1,170 @@
 import React, { useState, useEffect } from "react";
 import "./App.css";
+import { db, storage } from "./firebase";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  orderBy,
+  serverTimestamp,
+} from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
-function App() {
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      title: "تيشيرت شبابي أسود",
-      price: "350 جنيه",
-      category: "شبابي",
-      image: "/uploads/shirt1.jpg",
-    },
-    {
-      id: 2,
-      title: "بنطلون جينز",
-      price: "450 جنيه",
-      category: "بناطيل",
-      image: "/uploads/jeans1.jpg",
-    },
-    {
-      id: 3,
-      title: "ترينج رياضي",
-      price: "550 جنيه",
-      category: "رياضي",
-      image: "/uploads/sport1.jpg",
-    },
-  ]);
-
-  const [selectedCategory, setSelectedCategory] = useState("الكل");
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
+export default function App() {
+  const [products, setProducts] = useState([]);
+  const [category, setCategory] = useState("all");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-
-  // Navbar scroll effect
-  useEffect(() => {
-    const handleScroll = () => {
-      const navbar = document.querySelector(".navbar");
-      if (window.scrollY > 50) navbar.classList.add("navbar-scrolled");
-      else navbar.classList.remove("navbar-scrolled");
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  const handleFilter = (category) => {
-    setSelectedCategory(category);
-  };
-
-  const filteredProducts =
-    selectedCategory === "الكل"
-      ? products
-      : products.filter((p) => p.category === selectedCategory);
-
   const [newProduct, setNewProduct] = useState({
-    title: "",
+    name: "",
     price: "",
     category: "شبابي",
-    image: "",
+    image: null,
   });
 
-  const handleAddProduct = () => {
-    if (!newProduct.title || !newProduct.price || !newProduct.image) {
-      alert("من فضلك املأ كل الحقول");
+  const categories = ["all", "شبابي", "رياضي", "بناطيل"];
+
+  // ✅ تحميل المنتجات من Firebase
+  useEffect(() => {
+    const fetchProducts = async () => {
+      const q = query(collection(db, "products"), orderBy("timestamp", "desc"));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setProducts(data);
+    };
+    fetchProducts();
+  }, []);
+
+  // ✅ رفع منتج جديد
+  const handleUpload = async () => {
+    if (!newProduct.name || !newProduct.price || !newProduct.image) {
+      alert("من فضلك املأ كل البيانات");
       return;
     }
 
-    setProducts([...products, { ...newProduct, id: Date.now() }]);
-    setNewProduct({ title: "", price: "", category: "شبابي", image: "" });
-  };
+    try {
+      // 1️⃣ رفع الصورة إلى Firebase Storage
+      const imageRef = ref(storage, `products/${Date.now()}_${newProduct.image.name}`);
+      await uploadBytes(imageRef, newProduct.image);
+      const imageURL = await getDownloadURL(imageRef);
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) =>
-        setNewProduct({ ...newProduct, image: e.target.result });
-      reader.readAsDataURL(file);
+      // 2️⃣ حفظ بيانات المنتج في Firestore
+      await addDoc(collection(db, "products"), {
+        name: newProduct.name,
+        price: newProduct.price,
+        category: newProduct.category,
+        imageURL,
+        timestamp: serverTimestamp(),
+      });
+
+      alert("✅ تم رفع المنتج بنجاح!");
+      setNewProduct({ name: "", price: "", category: "شبابي", image: null });
+      window.location.reload();
+    } catch (error) {
+      console.error("خطأ أثناء الرفع:", error);
     }
   };
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (password === "mansy123") {
-      setShowLogin(false);
-      setShowAdmin(true);
+  // ✅ تسجيل الدخول للوحة التحكم
+  const handleLogin = () => {
+    if (password === "admin123") {
+      setIsAdmin(true);
       setError("");
     } else {
-      setError("كلمة المرور غير صحيحة ❌");
+      setError("كلمة المرور غير صحيحة");
     }
   };
 
-  const handleLogout = () => {
-    setShowAdmin(false);
-  };
+  // ✅ تصفية المنتجات حسب النوع
+  const filteredProducts =
+    category === "all"
+      ? products
+      : products.filter((p) => p.category === category);
 
   return (
-    <div className="App fade-in">
-      {/* Navbar */}
+    <div className="App">
+      {/* ===== Navbar ===== */}
       <nav className="navbar">
-        <div className="container nav-inner">
+        <div className="nav-inner container">
           <div className="brand">
             Mansy <span>Store</span>
-          </div>
-          <div>
-            <button
-              className="btn gold"
-              onClick={() => setShowLogin(!showLogin)}
-            >
-              لوحة التحكم
-            </button>
           </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="hero">
+      {/* ===== Hero ===== */}
+      <section className="hero fade-in">
         <h1>Mansy Store</h1>
-        <p>أحدث صيحات الموضة الشبابية والرياضية</p>
-        <button
-          className="btn gold"
-          onClick={() =>
-            window.scrollTo({ top: 700, behavior: "smooth" })
-          }
-        >
-          تصفح المنتجات
-        </button>
+        <p>اكتشف أحدث الموديلات الفاخرة</p>
       </section>
 
-      {/* Category Filter */}
-      <div className="container">
-        <div className="category-filter">
-          {["الكل", "شبابي", "رياضي", "بناطيل"].map((cat) => (
-            <div
-              key={cat}
-              className={`chip ${
-                selectedCategory === cat ? "active" : ""
-              }`}
-              onClick={() => handleFilter(cat)}
-            >
-              {cat}
-            </div>
-          ))}
-        </div>
-
-        {/* Product Grid */}
-        <div className="grid">
-          {filteredProducts.map((product) => (
-            <div className="card fade-in" key={product.id}>
-              <div className="card-media">
-                <img src={product.image} alt={product.title} />
-              </div>
-              <div className="card-body">
-                <h3>{product.title}</h3>
-                <div className="meta">
-                  <span>{product.price}</span>
-                  <span>{product.category}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* ===== Category Filter ===== */}
+      <div className="category-filter container fade-in">
+        {categories.map((c) => (
+          <div
+            key={c}
+            className={`chip ${category === c ? "active" : ""}`}
+            onClick={() => setCategory(c)}
+          >
+            {c === "all" ? "الكل" : c}
+          </div>
+        ))}
       </div>
 
-      {/* Admin Login */}
-      {showLogin && !showAdmin && (
+      {/* ===== Products Grid ===== */}
+      <div className="grid container fade-in">
+        {filteredProducts.map((p) => (
+          <div className="card" key={p.id}>
+            <div className="card-media">
+              <img src={p.imageURL} alt={p.name} />
+            </div>
+            <div className="card-body">
+              <h3>{p.name}</h3>
+              <div className="meta">
+                <span>{p.price} ج.م</span>
+                <span>{p.category}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== Admin Login ===== */}
+      {!isAdmin && (
         <div className="admin-panel fade-in">
-          <h3>تسجيل الدخول</h3>
-          <form onSubmit={handleLogin}>
-            <input
-              type="password"
-              placeholder="ادخل كلمة المرور"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            {error && <div className="error">{error}</div>}
-            <button type="submit" className="btn gold full">
-              دخول
-            </button>
-            <button
-              type="button"
-              className="btn full"
-              onClick={() => setShowLogin(false)}
-            >
-              إلغاء
-            </button>
-          </form>
+          <h3>تسجيل دخول المدير</h3>
+          <input
+            type="password"
+            placeholder="كلمة السر"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && <div style={{ color: "red", marginBottom: "8px" }}>{error}</div>}
+          <button className="btn full gold" onClick={handleLogin}>
+            دخول
+          </button>
         </div>
       )}
 
-      {/* Admin Panel */}
-      {showAdmin && (
+      {/* ===== Admin Panel ===== */}
+      {isAdmin && (
         <div className="admin-panel fade-in">
-          <h3>لوحة التحكم 🛠️</h3>
+          <h3>إضافة منتج جديد</h3>
           <input
             type="text"
             placeholder="اسم المنتج"
-            value={newProduct.title}
+            value={newProduct.name}
             onChange={(e) =>
-              setNewProduct({ ...newProduct, title: e.target.value })
+              setNewProduct({ ...newProduct, name: e.target.value })
             }
           />
           <input
-            type="text"
+            type="number"
             placeholder="السعر"
             value={newProduct.price}
             onChange={(e) =>
@@ -218,27 +181,22 @@ function App() {
             <option value="رياضي">رياضي</option>
             <option value="بناطيل">بناطيل</option>
           </select>
-          <input type="file" onChange={handleImageUpload} />
-          {newProduct.image && (
-            <div className="preview">
-              <img src={newProduct.image} alt="preview" />
-            </div>
-          )}
-          <button className="btn gold full" onClick={handleAddProduct}>
-            إضافة المنتج
-          </button>
-          <button className="btn full" onClick={handleLogout}>
-            تسجيل الخروج
+          <input
+            type="file"
+            onChange={(e) =>
+              setNewProduct({ ...newProduct, image: e.target.files[0] })
+            }
+          />
+          <button className="btn full gold" onClick={handleUpload}>
+            رفع المنتج ✅
           </button>
         </div>
       )}
 
-      {/* Footer */}
-      <footer className="footer">
-        <p>© {new Date().getFullYear()} ENG:Ahmed ELmansy| جميع الحقوق محفوظة</p>
+      {/* ===== Footer ===== */}
+      <footer className="footer fade-in">
+        <p>© 2025 ENG: Ahmed Elmansy. All Rights Reserved.</p>
       </footer>
     </div>
   );
 }
-
-export default App;
