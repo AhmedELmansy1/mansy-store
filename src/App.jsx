@@ -235,7 +235,7 @@ function App() {
 
       {/* Footer */}
       <footer className="footer">
-        <p>© {new Date().getFullYear()} Mansy Store | جميع الحقوق محفوظة</p>
+        <p>© {new Date().getFullYear()} ENG:Ahmed ELmansy| جميع الحقوق محفوظة</p>
       </footer>
     </div>
   );
